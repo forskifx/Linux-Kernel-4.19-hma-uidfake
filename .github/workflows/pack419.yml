@@ -1,0 +1,56 @@
+name: build-4.19-pack
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    name: pack hma-uidfake 4.19 module zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # lkmloader is built here, from external/lkmloader.
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y nlohmann-json3-dev
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          local-cache: false
+      - name: Validate NDK toolchain
+        run: |
+          set -euo pipefail
+          ndk="${{ steps.ndk.outputs.ndk-path }}"
+          test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+          test -f "$ndk/build/cmake/android.toolchain.cmake"
+      - name: Stage prebuilt 4.19 ko
+        run: |
+          set -euo pipefail
+          mkdir -p build/ko
+          cp 4.19/legacy-4.19_arm64_hma_uidfake.ko build/ko/
+          ls -la build/ko
+      - name: Configure
+        run: |
+          set -euo pipefail
+          ndk="${{ steps.ndk.outputs.ndk-path }}"
+          cmake -S . -B build \
+            -DUG_NDK="$ndk" \
+            -DUG_USE_PREBUILT_KO=ON \
+            -DUG_VERSION_OVERRIDE="0.4.0-4.19" \
+            -DUG_VERSION_CODE_OVERRIDE=4001
+      - name: Build and pack
+        run: |
+          set -euo pipefail
+          cmake --build build -j"$(nproc)"
+          ls -la build/dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hma-419-dist
+          path: build/dist/*.zip
+          if-no-files-found: error
